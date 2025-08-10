@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>みんなの辞書（2chトリップ式）</title>
+  <style>
+    body { font-family: sans-serif; margin: 2em; }
+    .entry { border-bottom: 1px solid #ccc; margin-bottom: 1em; padding-bottom: 1em; }
+    .trip { color: #888; font-size: 0.9em; }
+    .like { color: #e44; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>みんなの辞書（2chトリップ式）</h1>
+  <form id="postForm">
+    <input type="text" id="word" placeholder="単語（例: 赤穂浪士）" required>
+    <input type="text" id="name" placeholder="名前#パスワード（任意）">
+    <br>
+    <textarea id="meaning" placeholder="意味・説明" required rows="3" cols="40"></textarea>
+    <br>
+    <button type="submit">投稿</button>
+  </form>
+  <hr>
+  <div id="entries"></div>
+
+  <script>
+    // 簡易トリップ生成（2ch方式の簡易版: cryptの代わりにSHA-1を利用）
+    async function makeTrip(key) {
+      if (!key) return '';
+      const encoder = new TextEncoder();
+      const data = encoder.encode(key);
+      const hashBuffer = await crypto.subtle.digest('SHA-1', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      return '◆' + hashHex.slice(0, 10);
+    }
+
+    // 投稿保存・取得（localStorage利用）
+    function getEntries() {
+      return JSON.parse(localStorage.getItem('entries') || '[]');
+    }
+    function saveEntries(entries) {
+      localStorage.setItem('entries', JSON.stringify(entries));
+    }
+
+    // 投稿表示
+    async function renderEntries() {
+      const entries = getEntries();
+      const container = document.getElementById('entries');
+      container.innerHTML = '';
+      for (const [i, entry] of entries.entries()) {
+        const trip = entry.trip ? `<span class="trip">${entry.trip}</span>` : '';
+        container.innerHTML += `
+          <div class="entry">
+            <b>${entry.word}</b> ${trip}<br>
+            <div>${entry.meaning.replace(/\n/g, '<br>')}</div>
+            <div>
+              <span class="like" data-idx="${i}">👍 ${entry.likes || 0}</span>
+              <span style="color:#aaa; font-size:0.8em;">${new Date(entry.date).toLocaleString()}</span>
+            </div>
+          </div>
+        `;
+      }
+      // いいねボタン
+      document.querySelectorAll('.like').forEach(el => {
+        el.onclick = function() {
+          const idx = +el.dataset.idx;
+          const liked = JSON.parse(localStorage.getItem('liked') || '[]');
+          if (liked.includes(idx)) return alert('すでにいいね済みです');
+          entries[idx].likes = (entries[idx].likes || 0) + 1;
+          liked.push(idx);
+          localStorage.setItem('liked', JSON.stringify(liked));
+          saveEntries(entries);
+          renderEntries();
+        };
+      });
+    }
+
+    // 投稿処理
+    document.getElementById('postForm').onsubmit = async function(e) {
+      e.preventDefault();
+      const word = document.getElementById('word').value.trim();
+      const nameInput = document.getElementById('name').value.trim();
+      const meaning = document.getElementById('meaning').value.trim();
+      let trip = '';
+      let name = '';
+      if (nameInput.includes('#')) {
+        [name, tripKey] = nameInput.split('#', 2);
+        trip = await makeTrip(tripKey);
+      } else {
+        name = nameInput;
+      }
+      const entries = getEntries();
+      entries.unshift({
+        word, meaning, name, trip,
+        date: new Date().toISOString(),
+        likes: 0
+      });
+      saveEntries(entries);
+      document.getElementById('postForm').reset();
+      renderEntries();
+    };
+
+    // 初期表示
+    renderEntries();
+  </script>
+</body>
+</html>
